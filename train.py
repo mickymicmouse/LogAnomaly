@@ -61,7 +61,7 @@ plot_2d_graph(vocabs, xs, ys)
 
 
 
-#%% 모델 로드 후 Train 
+#%% Embedding 모델 로드 후 OPTION 설정
 
 import torch
 import torch.nn as n
@@ -89,7 +89,7 @@ options['window_size'] = 10  # if fix_window
 # Features
 options['sequentials'] = True
 options['quantitatives'] = True
-options['semantics'] = False
+options['semantics'] = True
 options['feature_num'] = sum(
     [options['sequentials'], options['quantitatives'], options['semantics']])
 
@@ -118,6 +118,8 @@ options['model_path'] = "../result/loganomaly/loganomaly_epoch299.pth"
 options['num_candidates'] = 9
 
 
+
+#%% LSTM 모델 로드 
 Model = lstm.loganomaly(input_size=options['input_size'],
                    hidden_size=options['hidden_size'],
                    num_layers=options['num_layers'],
