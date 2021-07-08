@@ -611,21 +611,27 @@ with torch.no_grad():
             else:
                 TP += valid_loader[line]
 """
+
 tbar = tqdm(valid_loader, desc="\r")
 num_batch = len(valid_loader)
 with torch.no_grad():
     for i, (ln, label) in enumerate(tbar):
+        print(label, len(label))
         features = []
         for value in ln.values():
             features.append(value.clone().detach().to(options['device']))
         output = Model(features=features, device=options['device'])
-        predicted = torch.argsort(output, 1)[0][-num_candidates:]
+        pred = []
         label = torch.tensor(label).view(-1).to(options['device'])
-        if label not in predicted:
-            FP += 1
-            break
-        else:
-            TP += 1
+        for j in range(batch_size):
+            predicted = torch.argsort(output, 1)[j][-num_candidates:]
+            pred.append(predicted)
+        
+            if label[j] not in predicted:
+                FP += 1
+                break
+            else:
+                TP += 1
 
 
 
