@@ -206,7 +206,7 @@ options['feature_num'] = sum(
 options['input_size'] = 100
 options['hidden_size'] = 64
 options['num_layers'] = 2
-options['num_classes'] = 427
+options['num_classes'] = 237
 
 # Train
 options['batch_size'] = 2048
@@ -223,7 +223,7 @@ options['model_name'] = "loganomaly"
 options['save_dir'] = os.path.join(Data_root,"uri_result")
 
 # Predict
-options['model_path'] = "../result/loganomaly/loganomaly_epoch299.pth"
+options['model_path'] = r"C:\Users\seoun\Desktop\Labs\LogData Project\LogAnomaly\Data\uri_result\loganomaly_last.pth"
 options['num_candidates'] = 9
 
 
@@ -497,9 +497,9 @@ for epoch in range(start_epoch, max_epoch):
     tbar = tqdm(train_loader, desc="\r")
     num_batch = len(train_loader)
     total_losses = 0
-    for i, (log, label) in enumerate(tbar):
+    for i, (ln, label) in enumerate(tbar):
         features = []
-        for value in log.values():
+        for value in ln.values():
             features.append(value.clone().detach().to(options['device']))
         output = Model(features=features, device=options['device'])
         loss = criterion(output, label.to(options['device']))
@@ -548,12 +548,82 @@ for epoch in range(start_epoch, max_epoch):
         
         save_checkpoint(epoch, Model, best_loss, log, best_score, optimizer, options['save_dir'], options['model_name'])
     save_checkpoint(epoch, Model, best_loss, log, best_score, optimizer, options['save_dir'], options['model_name'], suffix = "last")
-    save_log(options['save_dir'])
+    save_log(log, options['save_dir'])
     
 
 
 log['train']['epoch'].append(epoch)
 start = time.strftime("%H:%M:%S")
+
+
+#%% 예측 결과값 (Validation)
+
+
+num_candidates = options['num_candidates']
+num_classes = options['num_classes']
+input_size = options['input_size']
+sequentials = options['sequentials']
+quantitatives = options['quantitatives']
+semantics = options['semantics']
+batch_size = options['batch_size']
+
+
+Model = Model.to(options['device'])
+Model.load_state_dict(torch.load(options['model_path'])['state_dict'])
+Model.eval()
+print('model_path: {}'.format(options['model_path']))
+# test_normal_loader, test_normal_length = generate('hdfs_test_normal')
+
+
+TP = 0
+FP = 0
+# Test the model
+start_time = time.time()
+with torch.no_grad():
+    for line in tqdm(validset):
+        for i in range(len(line) - options['window_size']):
+            seq0 = line[i:i + options['window_size']]
+            label = line[i + options['window_size']]
+            
+            seq1 = [0] * 238
+            log_conuter = Counter(seq0)
+            for key in log_conuter:
+                seq1[key] = log_conuter[key]
+
+            seq0 = torch.tensor(seq0, dtype=torch.float).view(
+                -1, options['window_size'], input_size).to(options['device'])
+            seq1 = torch.tensor(seq1, dtype=torch.float).view(
+                -1, num_classes, input_size).to(options['device'])
+            label = torch.tensor(label).view(-1).to(options['device'])
+            output = model(features=[seq0, seq1], device=options['device'])
+            predicted = torch.argsort(output,
+                                      1)[0][-num_candidates:]
+            if label not in predicted:
+                FP += valid_loader[line]
+                break
+            else:
+                TP += valid_loader[line]
+                
+
+# Compute precision, recall and F1-measure
+# FN = test_abnormal_length - TP
+# P = 100 * TP / (TP + FP)
+# R = 100 * TP / (TP + FN)
+Acc = 100 * TP / (TP + FP)
+# F1 = 2 * P * R / (P + R)
+"""
+print(
+    'false positive (FP): {}, false negative (FN): {}, Precision: {:.3f}%, Recall: {:.3f}%, F1-measure: {:.3f}%'
+    .format(FP, FN, P, R, F1))
+"""
+print('Finished Predicting')
+elapsed_time = time.time() - start_time
+print('ACC: {}, TP: {}, FP: {}'.format(Acc, TP, FP))
+print('elapsed_time: {}'.format(elapsed_time))
+
+
+
+
 
 
 

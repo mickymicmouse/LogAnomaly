@@ -38,11 +38,11 @@ class loganomaly(nn.Module):
         super(loganomaly, self).__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
-        self.lstm0 = nn.LSTM(input_size,
+        self.lstm0 = nn.LSTM(100,
                              hidden_size,
                              num_layers,
                              batch_first=True)
-        self.lstm1 = nn.LSTM(input_size,
+        self.lstm1 = nn.LSTM(1,
                              hidden_size,
                              num_layers,
                              batch_first=True)
