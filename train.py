@@ -17,10 +17,54 @@ import os
 
 
 #데이터 로드
-Data_root = r"C:\Users\seoun\Desktop\Labs\LogData Project\Embedding\Data"
+Data_root = r"C:\Users\seoun\Desktop\Labs\LogData Project\LogAnomaly\Data"
 with open(os.path.join(Data_root, "elasticData"),"rb") as file:
     df = pickle.load(file)
+
+#%% 데이터 분할
+
+
+def remove_unknown(Data_root, df_acc_log):
+    # Unknown 데이터 삭제처리 
+    new_df_acc_log=[]
+    for i in range(len(df_acc_log)):
+        if i % 5000 ==0:
+            print(i)
+        dept_code = df_acc_log.iloc[i]['dept_code']
+        if dept_code != "UNKNOWN":
+            new_df_acc_log.append(df_acc_log.iloc[i])
+    new_df = pd.DataFrame(new_df_acc_log)
     
+    with open(os.path.join(Data_root, "known_df"), "wb") as file:
+        pickle.dump(new_df, file)
+    
+    return new_df
+        
+
+def sorting(Data_root, log_entry):
+    # log_entry 별 정렬 시행 
+    with open(os.path.join(Data_root, "known_df"),"rb") as file:
+        df = pickle.load(file)
+    
+    # df = new_df.copy()
+    
+    df.sort_values(by=[log_entry, 'str_time'], inplace = True)
+    df.reset_index(drop=True, inplace=True)
+    with open(os.path.join(Data_root, "sorted_df_acc_log_"+log_entry), "wb") as file:
+        pickle.dump(df, file)
+        
+    with open(os.path.join(Data_root, "sorted_df_acc_log_"+log_entry), "rb") as file:
+        df = pickle.load(file)
+    print(log_entry +"별 정렬")
+    return df
+
+
+
+log_entry= "dept_code"
+known_df = remove_unknown(Data_root, df)
+df = sorting(Data_root, log_entry) # dept_code, dept_name, user_sn, position_code, position_name
+
+
 
 #%% 2차원 그래프 그리기 
 def plot_2d_graph(vocabs, xs, ys):
@@ -30,6 +74,11 @@ def plot_2d_graph(vocabs, xs, ys):
         plt.annotate(v,xy=(xs[i],ys[i]))
 
 #%% 문장 생성 
+
+log_entry = "dept_code"
+with open(os.path.join(Data_root, "sorted_df_acc_log_"+log_entry), "rb") as file:
+    df = pickle.load(file)
+
 uri = df['uri']
 result = [sentence[1:].split("/") for sentence in uri]
 sentences = result
@@ -59,6 +108,66 @@ xs = xys[:,0]
 ys = xys[:,1]
 plot_2d_graph(vocabs, xs, ys)
 
+#%% log_entry별로 묶은 리스트 생성 
+
+def listing(Data_root, log_entry):
+    # log_entry 별로 URI 리스트화 
+    with open(os.path.join(Data_root, "sorted_df_acc_log_"+log_entry), "rb") as file:
+        df = pickle.load(file)
+    
+    dept_name = df[log_entry].unique()
+    dept_n = len(df[log_entry].unique())
+    dept_dict=dict()
+    for i in range(dept_n):
+        dept_dict[dept_name[i]]=[]
+    
+    for idx in range(len(df)):
+        if idx%5000 == 0:
+            print("%d 번째 로그입니다" %idx)
+        dept_dict[df[log_entry][idx]].append(df.iloc[idx]['uri'])
+    
+    uri_seq = []
+    for k in dept_dict.keys():
+        uri_seq.append(dept_dict[k])
+    
+    uri_seq.sort(key = len, reverse = True)
+    with open(os.path.join(Data_root, "uri_seq_"+log_entry), "wb") as file:
+        pickle.dump(uri_seq, file)
+    return uri_seq
+
+
+def train_valid_split(Data_root, log_entry, total_len):
+    # Train과 Valid 분할 
+    with open(os.path.join(Data_root, "uri_seq_"+log_entry), "rb") as file:
+        uri_seq = pickle.load(file)
+    
+    nums = total_len
+    ratio = 0.8
+    train_num = int(nums*ratio)
+    
+    # train과 valid의 개수를 비슷하게 맞추기 위함 
+    count = 0
+    idx = 0
+    for seq in uri_seq:
+        idx += 1
+        count += len(seq)
+        if count>=train_num:
+            break
+    
+    uri_train = uri_seq[:idx]
+    uri_valid = uri_seq[idx:]
+    
+    with open(os.path.join(Data_root, "uri_train_"+log_entry), "wb") as file:
+        pickle.dump(uri_train, file)
+    
+    with open(os.path.join(Data_root, "uri_valid_"+log_entry), "wb") as file:
+        pickle.dump(uri_valid, file)
+        
+    return uri_train, uri_valid
+
+log_entry = "dept_code"
+uri_seq = listing(Data_root, log_entry)
+trainset, validset = train_valid_split(Data_root, log_entry, len(df))
 
 
 #%% Embedding 모델 로드 후 OPTION 설정
@@ -78,7 +187,7 @@ import lstm
 
 
 options = dict()
-options['data_dir'] = '../data/'
+options['data_dir'] = r'C:\Users\seoun\Desktop\Labs\LogData Project\LogAnomaly\Data'
 options['window_size'] = 10
 options['device'] = "cpu"
 
@@ -87,7 +196,7 @@ options['sample'] = "sliding_window"
 options['window_size'] = 10  # if fix_window
 
 # Features
-options['sequentials'] = True
+options['sequentials'] = False
 options['quantitatives'] = True
 options['semantics'] = True
 options['feature_num'] = sum(
@@ -111,7 +220,7 @@ options['lr_decay_ratio'] = 0.1
 
 options['resume_path'] = None
 options['model_name'] = "loganomaly"
-options['save_dir'] = "../result/loganomaly/"
+options['save_dir'] = os.path.join(Data_root,"uri_result")
 
 # Predict
 options['model_path'] = "../result/loganomaly/loganomaly_epoch299.pth"
@@ -120,18 +229,24 @@ options['num_candidates'] = 9
 
 
 #%% LSTM 모델 로드 
+
 Model = lstm.loganomaly(input_size=options['input_size'],
                    hidden_size=options['hidden_size'],
                    num_layers=options['num_layers'],
                    num_keys=options['num_classes'])
 
-train_logs, train_labels = sliding_window()
-valid_logs, valid_labels = sliding_window()
 
+#%% 데이터 준비 
+import json
+from collections import Counter
 
+import numpy as np
+import pandas as pd
+from tqdm import tqdm
 
-def sliding_window(data_dir, datatype, window_size, sample_ratio=1):
+def sliding_window(data_dir, datatype,log_entry, window_size ):
     '''
+    데이터 window size 에 맞게 생성 
     dataset structure
         result_logs(dict):
             result_logs['feature0'] = list()
@@ -139,7 +254,21 @@ def sliding_window(data_dir, datatype, window_size, sample_ratio=1):
             ...
         labels(list)
     '''
-    event2semantic_vec = read_json(data_dir + 'hdfs/event2semantic_vec.json')
+    
+    with open(os.path.join(Data_root, "sorted_df_acc_log_"+log_entry), "rb") as file:
+        df = pickle.load(file)
+    uri_n = len(df['uri'].value_counts())
+    dfvc = df['uri'].value_counts()
+    uri_unique = df['uri'].unique()
+    
+    uri_dict = dict()
+    for i in range(uri_n):
+        uri_dict[uri_unique[i]]=i
+    uri_dict["OOV"]=uri_n
+    
+    
+    model = Word2Vec.load(os.path.join(data_dir, "uri_embedding_matrix"))
+    # event2semantic_vec = read_json(data_dir + 'hdfs/event2semantic_vec.json')
     num_sessions = 0
     result_logs = {}
     result_logs['Sequentials'] = []
@@ -147,44 +276,284 @@ def sliding_window(data_dir, datatype, window_size, sample_ratio=1):
     result_logs['Semantics'] = []
     labels = []
     if datatype == 'train':
-        data_dir += 'hdfs/hdfs_train'
-    if datatype == 'val':
-        data_dir += 'hdfs/hdfs_test_normal'
+        data_dir = os.path.join(data_dir,'uri_train_'+log_entry)
+    if datatype == 'valid':
+        data_dir = os.path.join(data_dir,'uri_valid_'+log_entry)
+    
+    
+    with open(data_dir, 'rb') as f:
+        uri_train = pickle.load(f)
+    for line in tqdm(uri_train):
+        
+        num_sessions += 1
+        # line = tuple(map(lambda n: n - 1, map(int, line.strip().split())))
 
-    with open(data_dir, 'r') as f:
-        for line in f.readlines():
-            num_sessions += 1
-            line = tuple(map(lambda n: n - 1, map(int, line.strip().split())))
+        for i in range(len(line) - window_size):
+            Sequential_pattern = list(line[i:i + window_size])
+            Quantitative_pattern = [0] * (uri_n+1) # uri 종류 개수 
+            log_counter = Counter(Sequential_pattern)
 
-            for i in range(len(line) - window_size):
-                Sequential_pattern = list(line[i:i + window_size])
-                Quantitative_pattern = [0] * 28
-                log_counter = Counter(Sequential_pattern)
-
-                for key in log_counter:
-                    Quantitative_pattern[key] = log_counter[key]
-                Semantic_pattern = []
-                for event in Sequential_pattern:
-                    if event == 0:
-                        Semantic_pattern.append([-1] * 300)
+            for key in log_counter:
+                Quantitative_pattern[uri_dict[key]] = log_counter[key]
+            Semantic_pattern = []
+            for event in Sequential_pattern:
+                segment = event[1:].split("/")
+                for part_idx in range(6):
+                    if part_idx>=len(segment):
+                        Semantic_pattern.append([0] * 100) # 부족한 부분 zero padding
                     else:
-                        Semantic_pattern.append(event2semantic_vec[str(event -
-                                                                       1)])
-                Sequential_pattern = np.array(Sequential_pattern)[:,
-                                                                  np.newaxis]
-                Quantitative_pattern = np.array(
-                    Quantitative_pattern)[:, np.newaxis]
-                result_logs['Sequentials'].append(Sequential_pattern)
-                result_logs['Quantitatives'].append(Quantitative_pattern)
-                result_logs['Semantics'].append(Semantic_pattern)
-                labels.append(line[i + window_size])
+                        if segment[part_idx] not in model.wv.index_to_key:
+                            Semantic_pattern.append([0] * 100) # OOV 처리
+                        else:    
+                            Semantic_pattern.append(model.wv[segment[part_idx]])
+                
+                
+            Sequential_pattern = np.array(Sequential_pattern)[:,np.newaxis]
+            Quantitative_pattern = np.array(Quantitative_pattern)[:, np.newaxis]
+            result_logs['Sequentials'].append(Sequential_pattern)
+            result_logs['Quantitatives'].append(Quantitative_pattern)
+            result_logs['Semantics'].append(Semantic_pattern)
+            labels.append(uri_dict[line[i + window_size]])
 
-    if sample_ratio != 1:
-        result_logs, labels = down_sample(result_logs, labels, sample_ratio)
 
     print('File {}, number of sessions {}'.format(data_dir, num_sessions))
     print('File {}, number of seqs {}'.format(data_dir,
                                               len(result_logs['Sequentials'])))
 
     return result_logs, labels
+
+
+train_logs, train_labels = sliding_window(Data_root, 'train',log_entry, 10)
+valid_logs, valid_labels = sliding_window(Data_root, 'valid', log_entry,10)
+
+
+#%% 데이터 클래스화 
+
+import numpy as np
+import pandas as pd
+import torch
+from torch.utils.data import Dataset, Sampler
+
+
+class log_dataset(Dataset):
+    def __init__(self, logs, labels, seq=True, quan=False, sem=False):
+        self.seq = seq
+        self.quan = quan
+        self.sem = sem
+        if self.seq:
+            self.Sequentials = logs['Sequentials']
+        if self.quan:
+            self.Quantitatives = logs['Quantitatives']
+        if self.sem:
+            self.Semantics = logs['Semantics']
+        self.labels = labels
+
+    def __len__(self):
+        return len(self.labels)
+
+    def __getitem__(self, idx):
+        log = dict()
+        if self.seq:
+            log['Sequentials'] = torch.tensor(self.Sequentials[idx],
+                                              dtype=torch.float)
+        if self.quan:
+            log['Quantitatives'] = torch.tensor(self.Quantitatives[idx],
+                                                dtype=torch.float)
+        if self.sem:
+            log['Semantics'] = torch.tensor(self.Semantics[idx],
+                                            dtype=torch.float)
+        return log, self.labels[idx]
+
+
+train_dataset = log_dataset(logs=train_logs,
+                                labels=train_labels,
+                                seq=options["sequentials"],
+                                quan=options["quantitatives"],
+                                sem=options["semantics"])
+valid_dataset = log_dataset(logs=valid_logs,
+                                labels=valid_labels,
+                                seq=options["sequentials"],
+                                quan=options["quantitatives"],
+                                sem=options["semantics"])
+
+print(train_dataset[0])
+
+
+#%% 데이터 로딩
+import torch.nn as nn
+from torch.utils.data import DataLoader
+
+train_loader = DataLoader(train_dataset,
+                               batch_size=options['batch_size'],
+                               shuffle=True,
+                               pin_memory=True)
+valid_loader = DataLoader(valid_dataset,
+                               batch_size=options['batch_size'],
+                               shuffle=False,
+                               pin_memory=True)
+
+
+num_train_log = len(train_dataset)
+num_valid_log = len(valid_dataset)
+
+print('Find %d train logs, %d validation logs' %
+      (num_train_log, num_valid_log))
+print('Train batch size %d ,Validation batch size %d' %
+      (options['batch_size'], options['batch_size']))
+
+#%% 모델세팅
+Model = Model.to(options['device'])
+if options['optimizer'] == 'sgd':
+    optimizer = torch.optim.SGD(Model.parameters(),
+                                     lr=options['lr'],
+                                     momentum=0.9)
+elif options['optimizer'] == 'adam':
+    optimizer = torch.optim.Adam(
+        Model.parameters(),
+        lr=options['lr'],
+        betas=(0.9, 0.999),
+    )
+
+
+
+def save_checkpoint(epoch, model, best_loss, log, best_score,optimizer, save_dir,model_name, save_optimizer=True, suffix=""):
+    checkpoint = {
+        "epoch": epoch,
+        "state_dict": model.state_dict(),
+        "best_loss": best_loss,
+        "log": log,
+        "best_score": best_score
+    }
+    if save_optimizer:
+        checkpoint['optimizer'] = optimizer.state_dict()
+    save_path = os.path.join(save_dir ,model_name + "_" + suffix + ".pth")
+    torch.save(checkpoint, save_path)
+    print("Save model checkpoint at {}".format(save_path))
+
+
+def save_parameters(options, filename):
+    with open(filename, "w+") as f:
+        for key in options.keys():
+            f.write("{}: {}\n".format(key, options[key]))
+            
+def save_log(log, save_dir):
+    try:
+        for key, values in log.items():
+            pd.DataFrame(values).to_csv(os.path.join(save_dir, key + "_log.csv"),
+                                        index=False)
+        print("Log saved")
+    except:
+        print("Failed to save logs")
+
+start_epoch = 0
+best_loss = 1e10
+best_score = -1
+max_epoch = options['max_epoch']
+save_parameters(options, options['save_dir']+"parameters.txt")
+log = {
+            "train": {key: []
+                      for key in ["epoch", "lr", "time", "loss"]},
+            "valid": {key: []
+                      for key in ["epoch", "lr", "time", "loss"]}
+        }
+
+if options['resume_path'] is not None:
+    if os.path.isfile(options['resume_path']):
+        print("Resuming from {}".format(options['resume_path']))
+        checkpoint = torch.load(options['resume_path'])
+        start_epoch = checkpoint['epoch'] + 1
+        best_loss = checkpoint['best_loss']
+        log = checkpoint['log']
+        best_f1_score = checkpoint['best_f1_score']
+        model.load_state_dict(checkpoint['state_dict'])
+        if "optimizer" in checkpoint.keys():
+            print("Loading optimizer state dict")
+            optimizer.load_state_dict(checkpoint['optimizer'])
+    else:
+        print("Checkpoint not found")
+
+
+#%% 모델 학습 
+import time
+
+for epoch in range(start_epoch, max_epoch):
+    if epoch == 0:
+        optimizer.param_groups[0]['lr'] /= 32
+    if epoch in [1,2,3,4,5]:
+        optimizer.param_groups[0]['lr'] *= 2
+    if epoch in options['lr_step']:
+        optimizer.param_groups[0]['lr'] *= options['lr_decay_ratio']
+    # Training
+    log['train']['epoch'].append(epoch)
+    start = time.strftime("%H:%M:%S")
+    lr = optimizer.state_dict()['param_groups'][0]['lr']
+    print("Starting epoch: %d | phase: train | ⏰: %s | Learning rate: %f" %
+          (epoch, start, lr))
+    log['train']['lr'].append(lr)
+    log['train']['time'].append(start)
+    Model.train()
+    optimizer.zero_grad()
+    criterion = nn.CrossEntropyLoss()
+    tbar = tqdm(train_loader, desc="\r")
+    num_batch = len(train_loader)
+    total_losses = 0
+    for i, (log, label) in enumerate(tbar):
+        features = []
+        for value in log.values():
+            features.append(value.clone().detach().to(options['device']))
+        output = Model(features=features, device=options['device'])
+        loss = criterion(output, label.to(options['device']))
+        total_losses += float(loss)
+        loss /= options['accumulation_step'] 
+        loss.backward()
+        if (i + 1) % options['accumulation_step']  == 0:
+            optimizer.step()
+            optimizer.zero_grad()
+        tbar.set_description("Train loss: %.5f" % (total_losses / (i + 1)))
+
+    log['train']['loss'].append(total_losses / num_batch)
+    # End of Training Code
+    
+    if epoch >=max_epoch // 2 and epoch % 2==0:
+        # validation
+        Model.eval()
+        log['valid']['epoch'].append(epoch)
+        lr = optimizer.state_dict()['param_groups'][0]['lr']
+        log['valid']['lr'].append(lr)
+        start = time.strftime("%H:%M:%S")
+        print("Starting epoch: %d | phase: valid | ⏰: %s " % (epoch, start))
+        log['valid']['time'].append(start)
+        total_losses = 0
+        criterion = nn.CrossEntropyLoss()
+        tbar = tqdm(valid_loader, desc="\r")
+        num_batch = len(valid_loader)
+        for i, (log, label) in enumerate(tbar):
+            with torch.no_grad():
+                features = []
+                for value in log.values():
+                    features.append(value.clone().detach().to(options['device']))
+                output = Model(features=features, device=options['device'])
+                loss = criterion(output, label.to(options['device']))
+                total_losses += float(loss)
+        print("Validation loss:", total_losses / num_batch)
+        log['valid']['loss'].append(total_losses / num_batch)
+
+        if total_losses / num_batch < best_loss:
+            best_loss = total_losses / num_batch
+            save_checkpoint(epoch,
+                                 save_optimizer=False,
+                                 suffix="bestloss")
+        
+        # End of Validation Code
+        
+        save_checkpoint(epoch, Model, best_loss, log, best_score, optimizer, options['save_dir'], options['model_name'])
+    save_checkpoint(epoch, Model, best_loss, log, best_score, optimizer, options['save_dir'], options['model_name'], suffix = "last")
+    save_log(options['save_dir'])
+    
+
+
+log['train']['epoch'].append(epoch)
+start = time.strftime("%H:%M:%S")
+
+
 
