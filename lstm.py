@@ -38,11 +38,11 @@ class loganomaly(nn.Module):
         super(loganomaly, self).__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
-        self.lstm0 = nn.LSTM(100,
+        self.lstm0 = nn.LSTM(1,
                              hidden_size,
                              num_layers,
                              batch_first=True)
-        self.lstm1 = nn.LSTM(1,
+        self.lstm1 = nn.LSTM(100,
                              hidden_size,
                              num_layers,
                              batch_first=True)
@@ -72,7 +72,7 @@ class loganomaly(nn.Module):
 
     def forward(self, features, device):
         input0, input1 = features[0], features[1]
-
+        # print(input0)
         h0_0 = torch.zeros(self.num_layers, input0.size(0),
                            self.hidden_size).to(device)
         c0_0 = torch.zeros(self.num_layers, input0.size(0),

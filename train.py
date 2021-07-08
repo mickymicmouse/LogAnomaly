@@ -228,12 +228,6 @@ options['num_candidates'] = 9
 
 
 
-#%% LSTM 모델 로드 
-
-Model = lstm.loganomaly(input_size=options['input_size'],
-                   hidden_size=options['hidden_size'],
-                   num_layers=options['num_layers'],
-                   num_keys=options['num_classes'])
 
 
 #%% 데이터 준비 
@@ -401,6 +395,18 @@ print('Find %d train logs, %d validation logs' %
 print('Train batch size %d ,Validation batch size %d' %
       (options['batch_size'], options['batch_size']))
 
+
+
+
+#%% LSTM 모델 로드 
+
+Model = lstm.loganomaly(input_size=options['input_size'],
+                   hidden_size=options['hidden_size'],
+                   num_layers=options['num_layers'],
+                   num_keys=options['num_classes'])
+
+
+
 #%% 모델세팅
 Model = Model.to(options['device'])
 if options['optimizer'] == 'sgd':
@@ -527,10 +533,10 @@ for epoch in range(start_epoch, max_epoch):
         criterion = nn.CrossEntropyLoss()
         tbar = tqdm(valid_loader, desc="\r")
         num_batch = len(valid_loader)
-        for i, (log, label) in enumerate(tbar):
+        for i, (ln, label) in enumerate(tbar):
             with torch.no_grad():
                 features = []
-                for value in log.values():
+                for value in ln.values():
                     features.append(value.clone().detach().to(options['device']))
                 output = Model(features=features, device=options['device'])
                 loss = criterion(output, label.to(options['device']))
@@ -579,6 +585,7 @@ TP = 0
 FP = 0
 # Test the model
 start_time = time.time()
+"""
 with torch.no_grad():
     for line in tqdm(validset):
         for i in range(len(line) - options['window_size']):
@@ -603,7 +610,24 @@ with torch.no_grad():
                 break
             else:
                 TP += valid_loader[line]
-                
+"""
+tbar = tqdm(valid_loader, desc="\r")
+num_batch = len(valid_loader)
+with torch.no_grad():
+    for i, (ln, label) in enumerate(tbar):
+        features = []
+        for value in ln.values():
+            features.append(value.clone().detach().to(options['device']))
+        output = Model(features=features, device=options['device'])
+        predicted = torch.argsort(output, 1)[0][-num_candidates:]
+        label = torch.tensor(label).view(-1).to(options['device'])
+        if label not in predicted:
+            FP += 1
+            break
+        else:
+            TP += 1
+
+
 
 # Compute precision, recall and F1-measure
 # FN = test_abnormal_length - TP
