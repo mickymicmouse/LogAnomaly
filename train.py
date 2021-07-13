@@ -316,7 +316,7 @@ def sliding_window(data_dir, datatype,log_entry, window_size ):
 
     return result_logs, labels
 
-
+log_entry = "dept_code"
 train_logs, train_labels = sliding_window(Data_root, 'train',log_entry, 10)
 valid_logs, valid_labels = sliding_window(Data_root, 'valid', log_entry,10)
 
@@ -520,7 +520,7 @@ for epoch in range(start_epoch, max_epoch):
     log['train']['loss'].append(total_losses / num_batch)
     # End of Training Code
     
-    if epoch >=max_epoch // 2 and epoch % 2==0:
+    if epoch % 1==0:
         # validation
         Model.eval()
         log['valid']['epoch'].append(epoch)
@@ -616,21 +616,21 @@ tbar = tqdm(valid_loader, desc="\r")
 num_batch = len(valid_loader)
 with torch.no_grad():
     for i, (ln, label) in enumerate(tbar):
-        print(label, len(label))
+        
         features = []
         for value in ln.values():
             features.append(value.clone().detach().to(options['device']))
         output = Model(features=features, device=options['device'])
         pred = []
         label = torch.tensor(label).view(-1).to(options['device'])
-        for j in range(batch_size):
+        for j in range(len(label)):
             predicted = torch.argsort(output, 1)[j][-num_candidates:]
             pred.append(predicted)
-        
+            if j==0:
+                print(predicted, label[j])
             if label[j] not in predicted:
                 FP += 1
-                break
-            else:
+            elif label[j] in predicted:
                 TP += 1
 
 
@@ -655,5 +655,14 @@ print('elapsed_time: {}'.format(elapsed_time))
 
 
 
+#%% loss graph
 
+import matplotlib.pyplot as plt
 
+res = pd.read_csv(os.path.join(options['save_dir'], "train_log.csv"))
+plt.figure(figsize=(8,8))
+plt.title("train_loss")
+plt.plot(res['loss'])
+plt.xlabel("epoch")
+plt.ylabel("loss")
+plt.show()
